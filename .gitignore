@@ -1,0 +1,13 @@
+
+# Local environments and generated files
+.venv/
+__pycache__/
+*.pyc
+.DS_Store
+build/
+managed_components/
+sdkconfig
+sdkconfig.old
+
+# Keep datasets local until their size is reviewed
+#/recordings/

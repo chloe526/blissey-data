@@ -1,0 +1,30 @@
+{
+  "recording_id": "20261016_055527_479927Z",
+  "activity": "staged_fall",
+  "participant": "p2",
+  "session": "session_202610160510",
+  "room": "room1",
+  "placement": "Boards 6ft apart and 1ft7in off the ground",
+  "notes": "Boards on couches with coffee table inbetween. In common room, many pieces of furniture. People periodically walking nearby. 2 second buffer before and after action.",
+  "board_id": "STA",
+  "port": "/dev/cu.usbserial-4",
+  "baud": 921600,
+  "ap_mac": "ANY",
+  "created_at": "2026-10-16T05:55:27.480456+00:00",
+  "preparation_seconds": 10.0,
+  "requested_seconds": 30.0,
+  "status": "complete",
+  "category_is_recording_label": true,
+  "started_at": "2026-10-16T05:55:37.486744+00:00",
+  "saved_measurements": 1657,
+  "other_source_records": 0,
+  "malformed_records": 0,
+  "ignored_lines": 1,
+  "ended_at": "2026-10-16T05:56:07.497757+00:00",
+  "elapsed_seconds": 30.010695791977923,
+  "average_samples_per_second": 55.21364821014674,
+  "source_counts": {
+    "20:50:0D:D0:B8:B5": 1657
+  },
+  "unfinished_line_bytes": 1
+}

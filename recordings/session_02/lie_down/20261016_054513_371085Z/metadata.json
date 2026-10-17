@@ -1,0 +1,30 @@
+{
+  "recording_id": "20261016_054513_371085Z",
+  "activity": "lie_down",
+  "participant": "p2",
+  "session": "session_202610160510",
+  "room": "room1",
+  "placement": "Boards 6ft apart and 1ft7in off the ground",
+  "notes": "Boards on couches with coffee table inbetween. In common room, many pieces of furniture. People periodically walking nearby. 2 second buffer before and after action.",
+  "board_id": "STA",
+  "port": "/dev/cu.usbserial-4",
+  "baud": 921600,
+  "ap_mac": "ANY",
+  "created_at": "2026-10-16T05:45:13.371392+00:00",
+  "preparation_seconds": 10.0,
+  "requested_seconds": 30.0,
+  "status": "complete",
+  "category_is_recording_label": true,
+  "started_at": "2026-10-16T05:45:23.380785+00:00",
+  "saved_measurements": 1620,
+  "other_source_records": 0,
+  "malformed_records": 0,
+  "ignored_lines": 1,
+  "ended_at": "2026-10-16T05:45:53.385584+00:00",
+  "elapsed_seconds": 30.00447191699641,
+  "average_samples_per_second": 53.99195174911013,
+  "source_counts": {
+    "20:50:0D:D0:B8:B5": 1620
+  },
+  "unfinished_line_bytes": 1
+}
