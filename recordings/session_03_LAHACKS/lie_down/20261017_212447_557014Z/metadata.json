@@ -1,0 +1,30 @@
+{
+  "recording_id": "20261017_212447_557014Z",
+  "activity": "lie_down",
+  "participant": "p1",
+  "session": "session_202610172026",
+  "room": "room1",
+  "placement": "Boards 6 ft apart 1 ft 7 inches off the ground.",
+  "notes": "Esp32 boards are in their pokeball cases. Room is in the LA Hackathon room with many other people around the setup. 2 second buffer beffore and after action.",
+  "board_id": "STA",
+  "port": "/dev/cu.usbserial-5",
+  "baud": 921600,
+  "ap_mac": "ANY",
+  "created_at": "2026-10-17T21:24:47.557394+00:00",
+  "preparation_seconds": 15.0,
+  "requested_seconds": 30.0,
+  "status": "complete",
+  "category_is_recording_label": true,
+  "started_at": "2026-10-17T21:25:02.623949+00:00",
+  "saved_measurements": 1121,
+  "other_source_records": 0,
+  "malformed_records": 0,
+  "ignored_lines": 1,
+  "ended_at": "2026-10-17T21:25:32.626571+00:00",
+  "elapsed_seconds": 30.002838624990545,
+  "average_samples_per_second": 37.36313133605548,
+  "source_counts": {
+    "20:50:0D:D0:B8:B5": 1121
+  },
+  "unfinished_line_bytes": 129
+}
