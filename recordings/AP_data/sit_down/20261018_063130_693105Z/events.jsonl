@@ -1,0 +1,2 @@
+{"event": "action_start", "elapsed_seconds": 4.541049833002035, "host_time": "2026-10-18T06:31:50.870556+00:00", "timing_note": "Operator click, relative to UI receiving RECORDING NOW; approximate"}
+{"event": "action_end", "elapsed_seconds": 10.316020375001244, "host_time": "2026-10-18T06:31:56.645372+00:00", "timing_note": "Operator click, relative to UI receiving RECORDING NOW; approximate"}
