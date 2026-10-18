@@ -28,3 +28,75 @@ https://github.com/StevenMHernandez/ESP32-CSI-Tool
 
 The original license and README are preserved with the firmware.
 Configure both boards with matching Wi-Fi settings before flashing.
+
+## Verified sensing direction
+
+Use **STA transmitter → AP CSI receiver → USB → recorder**. The board acting as
+an access point is also the sensing receiver. Connect both boards to power, but
+record the AP's USB port. Port names can change after reconnecting; the collector
+requires `AP` CSI by default and rejects a station port before the action cue.
+
+The current pair was identified as AP `/dev/cu.usbserial-0001` and STA
+`/dev/cu.usbserial-4`; both use 921600 baud and channel 6. Treat these as local
+observations, not permanent hardware identities. Leave the source filter as
+`any`, or use the transmitting STA's MAC, not the AP's MAC.
+
+### Firmware configuration and build
+
+`firmware/esp32-csi-tool` is the maintained source for this pair. Use ESP-IDF 4.3.
+Each project has credential-free `sdkconfig.defaults`; existing `sdkconfig` files
+override defaults. Configure matching Wi-Fi credentials locally with menuconfig;
+never commit credentials or `sdkconfig`. Apply these role settings explicitly
+when reusing an existing configuration:
+
+- `active_ap`: Wi-Fi CSI, CSI collection, LLTF-only, serial output enabled; SD off.
+- `active_sta`: packet rate 100; CSI collection and serial CSI output disabled.
+- Both: UART and monitor baud 921600, FreeRTOS tick rate 1000 Hz, channel 6.
+- Both firmware programs force 20 MHz channel width and disable power saving.
+
+Build each project with `idf.py build`, then flash the matching board with
+`idf.py -p PORT flash`. On CMake 4, add `-D CMAKE_POLICY_VERSION_MINIMUM=3.5`
+before `build`. Do not flash both projects onto the same board. Power the STA
+independently of an open serial monitor: it should transmit without a host reader.
+
+The STA uses a fixed 10 ms transmit schedule and recreates its UDP socket after
+loss of connection. The AP drains UDP port 2223 without generating replies.
+CSI callbacks copy samples into a bounded queue; serial formatting runs in a
+separate task. Queue loss is reported as `CSI_QUEUE_DROPPED` and retained in
+recording metadata. Network loss can still reduce the measured rate; the 100 Hz
+setting is a transmission target, not an assurance of 100 valid samples/sec.
+
+### Recording behavior and data contract
+
+The recorder checks for valid AP CSI before the preparation countdown and checks
+again before the recording/action cue. A silent or wrong board fails the run and
+pauses the batch. Five seconds without a valid matching sample during recording
+also stops the batch, retaining partial data. A wall-clock/monotonic-clock
+discontinuity over 250 ms (for example, computer sleep or a clock adjustment)
+stops the batch as well, rather than treating the interrupted interval as continuous data.
+On macOS the collector requests idle-sleep prevention while its process is active;
+manual sleep can still interrupt a run. Close other serial monitors first.
+
+New firmware emits the original Hernandez CSV columns plus `first_word_invalid`
+between `len` and the CSI array (27 columns total). `len` is the number of emitted
+CSI bytes, capped at 128 in LLTF-only mode. The collector preserves all bytes,
+including the first four bytes when marked invalid; preprocessing must account
+for the flag. Older 26-column records remain readable, with an unknown invalid
+flag rather than an invented value.
+
+Records now use the actual receiver role for `board_id`, preserve the firmware's
+monotonic timestamp as `device_time_us`, and retain radio timestamps separately.
+Metadata includes device gaps over 250 ms, maximum device gap, detected device
+clock resets and observed firmware queue drops. `quality` describes these observed
+indicators; it does not certify the dataset or fall labels. Old recordings are
+not rewritten. Startup bytes are retained separately in `startup_serial.bin`.
+
+Run collector checks with:
+
+    python -m unittest discover -s collection -p 'test_collector*.py' -v
+
+Integration tests use pseudo-terminals at 115200 baud with USB modem control
+operations stubbed; real board validation at 921600 baud is recorded separately.
+
+See [the local hardware validation record](docs/ap-csi-setup-validation.md) for
+measured rates, reconnection evidence, and remaining limits.

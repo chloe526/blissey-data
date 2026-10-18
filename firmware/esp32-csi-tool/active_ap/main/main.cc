@@ -18,7 +18,9 @@
 #include "../../_components/csi_component.h"
 #include "../../_components/time_component.h"
 #include "../../_components/input_component.h"
-#include "../../_components/sockets_component.h"
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <unistd.h>
 
 /*
  * The examples use WiFi configuration that you can set via 'idf.py menuconfig'.
@@ -113,9 +115,10 @@ void softap_init() {
     ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_AP, &wifi_config));
     ESP_ERROR_CHECK(esp_wifi_start());
 
-    esp_wifi_set_ps(WIFI_PS_NONE);
+    ESP_ERROR_CHECK(esp_wifi_set_ps(WIFI_PS_NONE));
+    ESP_ERROR_CHECK(esp_wifi_set_bandwidth(WIFI_IF_AP, WIFI_BW_HT20));
 
-    ESP_LOGI(TAG, "softap_init finished. SSID:%s password:%s", ESP_WIFI_SSID, ESP_WIFI_PASS);
+    ESP_LOGI(TAG, "softap_init finished. SSID:%s", ESP_WIFI_SSID);
 }
 
 void config_print() {
@@ -130,13 +133,30 @@ void config_print() {
     printf("-----------------------\n");
     printf("WIFI_CHANNEL: %d\n", WIFI_CHANNEL);
     printf("ESP_WIFI_SSID: %s\n", ESP_WIFI_SSID);
-    printf("ESP_WIFI_PASSWORD: %s\n", ESP_WIFI_PASS);
     printf("SHOULD_COLLECT_CSI: %d\n", SHOULD_COLLECT_CSI);
     printf("SHOULD_COLLECT_ONLY_LLTF: %d\n", SHOULD_COLLECT_ONLY_LLTF);
     printf("SEND_CSI_TO_SERIAL: %d\n", SEND_CSI_TO_SERIAL);
     printf("SEND_CSI_TO_SD: %d\n", SEND_CSI_TO_SD);
     printf("-----------------------\n");
     printf("\n\n\n\n\n\n\n\n");
+}
+
+void sensing_udp_sink(void *) {
+    char buffer[64];
+    for (;;) {
+        int fd = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+        if (fd < 0) { vTaskDelay(pdMS_TO_TICKS(1000)); continue; }
+        struct sockaddr_in address = {};
+        address.sin_family = AF_INET;
+        address.sin_port = htons(2223);
+        address.sin_addr.s_addr = htonl(INADDR_ANY);
+        if (bind(fd, (struct sockaddr *)&address, sizeof(address)) == 0) {
+            printf("SENSING_RX: UDP port 2223 ready\n");
+            while (recvfrom(fd, buffer, sizeof(buffer), 0, NULL, NULL) >= 0) {}
+        }
+        close(fd);
+        vTaskDelay(pdMS_TO_TICKS(1000));
+    }
 }
 
 extern "C" void app_main() {
@@ -150,4 +170,5 @@ extern "C" void app_main() {
 #endif
 
     csi_init((char *) "AP");
+    xTaskCreate(sensing_udp_sink, "sensing_udp_sink", 3072, NULL, 4, NULL);
 }

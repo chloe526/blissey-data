@@ -5,6 +5,9 @@
 #include "math.h"
 #include <sstream>
 #include <iostream>
+#include <iomanip>
+#include "freertos/queue.h"
+#include <string.h>
 
 char *project_type;
 
@@ -14,13 +17,39 @@ char *project_type;
 
 #define CSI_TYPE CSI_RAW
 
-SemaphoreHandle_t mutex = xSemaphoreCreateMutex();
+static const size_t MAX_CSI_BYTES = 640;
+struct CsiSample {
+    wifi_pkt_rx_ctrl_t rx_ctrl;
+    uint8_t mac[6];
+    uint16_t len;
+    bool first_word_invalid;
+    int8_t buf[MAX_CSI_BYTES];
+    double timestamp;
+};
+static QueueHandle_t csi_queue;
+static volatile unsigned csi_queue_dropped = 0;
 
-void _wifi_csi_cb(void *ctx, wifi_csi_info_t *data) {
-    xSemaphoreTake(mutex, portMAX_DELAY);
+void _wifi_csi_cb(void *, wifi_csi_info_t *data) {
+    if (!data || !data->buf || !csi_queue) return;
+    CsiSample sample = {};
+    size_t length = data->len;
+#if CONFIG_SHOULD_COLLECT_ONLY_LLTF
+    if (length > 128) length = 128;
+#endif
+    if (!length || length > MAX_CSI_BYTES || length % 2) return;
+    sample.rx_ctrl = data->rx_ctrl;
+    memcpy(sample.mac, data->mac, sizeof(sample.mac));
+    sample.len = length;
+    sample.first_word_invalid = data->first_word_invalid;
+    memcpy(sample.buf, data->buf, length);
+    sample.timestamp = get_steady_clock_timestamp();
+    if (xQueueSend(csi_queue, &sample, 0) != pdTRUE) ++csi_queue_dropped;
+}
+
+void print_csi_sample(CsiSample *data) {
     std::stringstream ss;
 
-    wifi_csi_info_t d = data[0];
+    const CsiSample &d = data[0];
     char mac[20] = {0};
     sprintf(mac, "%02X:%02X:%02X:%02X:%02X:%02X", d.mac[0], d.mac[1], d.mac[2], d.mac[3], d.mac[4], d.mac[5]);
 
@@ -48,14 +77,11 @@ void _wifi_csi_cb(void *ctx, wifi_csi_info_t *data) {
        << d.rx_ctrl.sig_len << ","
        << d.rx_ctrl.rx_state << ","
        << real_time_set << ","
-       << get_steady_clock_timestamp() << ","
-       << data->len << ",[";
+       << std::fixed << std::setprecision(6) << d.timestamp << ","
+       << data->len << ","
+       << (data->first_word_invalid ? 1 : 0) << ",[";
 
-#if CONFIG_SHOULD_COLLECT_ONLY_LLTF
-    int data_len = 128;
-#else
     int data_len = data->len;
-#endif
 
 int8_t *my_ptr;
 #if CSI_RAW
@@ -78,14 +104,26 @@ int8_t *my_ptr;
 #endif
     ss << "]\n";
 
-    printf(ss.str().c_str());
-    fflush(stdout);
-    vTaskDelay(0);
-    xSemaphoreGive(mutex);
+#ifdef CONFIG_SEND_CSI_TO_SERIAL
+    printf("%s", ss.str().c_str());
+#endif
+}
+
+void csi_writer_task(void *) {
+    CsiSample sample;
+    unsigned reported_drops = 0;
+    for (;;) {
+        if (xQueueReceive(csi_queue, &sample, pdMS_TO_TICKS(1000)) == pdTRUE)
+            print_csi_sample(&sample);
+        if (csi_queue_dropped != reported_drops) {
+            reported_drops = csi_queue_dropped;
+            printf("CSI_QUEUE_DROPPED: %u\n", reported_drops);
+        }
+    }
 }
 
 void _print_csi_csv_header() {
-    char *header_str = (char *) "type,role,mac,rssi,rate,sig_mode,mcs,bandwidth,smoothing,not_sounding,aggregation,stbc,fec_coding,sgi,noise_floor,ampdu_cnt,channel,secondary_channel,local_timestamp,ant,sig_len,rx_state,real_time_set,real_timestamp,len,CSI_DATA\n";
+    char *header_str = (char *) "type,role,mac,rssi,rate,sig_mode,mcs,bandwidth,smoothing,not_sounding,aggregation,stbc,fec_coding,sgi,noise_floor,ampdu_cnt,channel,secondary_channel,local_timestamp,ant,sig_len,rx_state,real_time_set,real_timestamp,len,first_word_invalid,CSI_DATA\n";
     outprintf(header_str);
 }
 
@@ -93,10 +131,13 @@ void csi_init(char *type) {
     project_type = type;
 
 #ifdef CONFIG_SHOULD_COLLECT_CSI
-    ESP_ERROR_CHECK(esp_wifi_set_csi(1));
+    csi_queue = xQueueCreate(32, sizeof(CsiSample));
+    configASSERT(csi_queue);
+    BaseType_t created = xTaskCreate(csi_writer_task, "csi_writer", 6144, NULL, 4, NULL);
+    configASSERT(created == pdPASS);
 
     // @See: https://github.com/espressif/esp-idf/blob/master/components/esp_wifi/include/esp_wifi_types.h#L401
-    wifi_csi_config_t configuration_csi;
+    wifi_csi_config_t configuration_csi = {};
     configuration_csi.lltf_en = 1;
     configuration_csi.htltf_en = 1;
     configuration_csi.stbc_htltf2_en = 1;
@@ -108,6 +149,7 @@ void csi_init(char *type) {
     ESP_ERROR_CHECK(esp_wifi_set_csi_rx_cb(&_wifi_csi_cb, NULL));
 
     _print_csi_csv_header();
+    ESP_ERROR_CHECK(esp_wifi_set_csi(1));
 #endif
 }
 

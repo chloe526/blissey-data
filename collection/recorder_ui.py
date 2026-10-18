@@ -102,6 +102,8 @@ def worker(settings):
                         path=Path(line.split(' | Destination: ',1)[1]).resolve()
                         if path.is_relative_to(DATA.resolve()):
                             STATE['folder']=str(path)
+                    if line.startswith(('Receiver check:', 'Receiver ready:')):
+                        STATE['phase']=line
                     if line.startswith('Prepare:'):
                         STATE['phase']=line
                     if line == 'RECORDING NOW':

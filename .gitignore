@@ -11,3 +11,6 @@ sdkconfig.old
 
 # Keep datasets local until their size is reviewed
 #/recordings/
+
+# Private board backups include Wi-Fi configuration
+/.firmware-backups/

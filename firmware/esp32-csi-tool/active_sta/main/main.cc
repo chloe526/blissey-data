@@ -97,7 +97,9 @@ static void event_handler(void* arg, esp_event_base_t event_base,
         esp_wifi_connect();
     } else if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_DISCONNECTED) {
         ESP_LOGI(TAG, "Retry connecting to the AP");
+        xEventGroupClearBits(s_wifi_event_group, WIFI_CONNECTED_BIT);
         esp_wifi_connect();
+    } else if (event_base == IP_EVENT && event_id == IP_EVENT_STA_LOST_IP) {
         xEventGroupClearBits(s_wifi_event_group, WIFI_CONNECTED_BIT);
     } else if (event_base == IP_EVENT && event_id == IP_EVENT_STA_GOT_IP) {
         ip_event_got_ip_t* event = (ip_event_got_ip_t*) event_data;
@@ -129,7 +131,7 @@ void station_init() {
                                                         NULL,
                                                         &instance_any_id));
     ESP_ERROR_CHECK(esp_event_handler_instance_register(IP_EVENT,
-                                                        IP_EVENT_STA_GOT_IP,
+                                                        ESP_EVENT_ANY_ID,
                                                         &event_handler,
                                                         NULL,
                                                         &instance_got_ip));
@@ -147,9 +149,10 @@ void station_init() {
     ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &wifi_config));
     ESP_ERROR_CHECK(esp_wifi_start());
 
-    esp_wifi_set_ps(WIFI_PS_NONE);
+    ESP_ERROR_CHECK(esp_wifi_set_ps(WIFI_PS_NONE));
+    ESP_ERROR_CHECK(esp_wifi_set_bandwidth(WIFI_IF_STA, WIFI_BW_HT20));
 
-    ESP_LOGI(TAG, "connect to ap SSID:%s password:%s", ESP_WIFI_SSID, ESP_WIFI_PASS);
+    ESP_LOGI(TAG, "connect to ap SSID:%s", ESP_WIFI_SSID);
 }
 
 TaskHandle_t xHandle = NULL;
@@ -172,7 +175,6 @@ void config_print() {
     printf("-----------------------\n");
     printf("WIFI_CHANNEL: %d\n", WIFI_CHANNEL);
     printf("ESP_WIFI_SSID: %s\n", ESP_WIFI_SSID);
-    printf("ESP_WIFI_PASSWORD: %s\n", ESP_WIFI_PASS);
     printf("PACKET_RATE: %i\n", CONFIG_PACKET_RATE);
     printf("SHOULD_COLLECT_CSI: %d\n", SHOULD_COLLECT_CSI);
     printf("SHOULD_COLLECT_ONLY_LLTF: %d\n", SHOULD_COLLECT_ONLY_LLTF);
@@ -190,9 +192,9 @@ extern "C" void app_main() {
     csi_init((char *) "STA");
 
 #if !(SHOULD_COLLECT_CSI)
-    printf("CSI will not be collected. Check `idf.py menuconfig  # > ESP32 CSI Tool Config` to enable CSI");
+    printf("SENSING_ROLE: dedicated STA transmitter; record CSI from the AP USB port\n");
 #endif
 
     xTaskCreatePinnedToCore(&vTask_socket_transmitter_sta_loop, "socket_transmitter_sta_loop",
-                            10000, (void *) &is_wifi_connected, 100, &xHandle, 1);
+                            4096, (void *) &is_wifi_connected, 5, &xHandle, 1);
 }

@@ -20,6 +20,7 @@ menu "ESP32 CSI Tool Config"
 
     config PACKET_RATE
         int "Packet TX Rate"
+        range 1 1000
         default "100"
         help
             By transmitting at some number of packets per second, the ESP32 should receive CSI at the same rate.
