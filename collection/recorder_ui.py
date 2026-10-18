@@ -18,6 +18,11 @@ from collector_categories import category_name
 
 HERE = Path(__file__).resolve().parent
 DATA = HERE.parent / 'recordings'
+PAIR_FILE = HERE / 'boards.local.json'
+try:
+    PAIR = json.loads(PAIR_FILE.read_text())
+except FileNotFoundError:
+    PAIR = {}
 TOKEN = secrets.token_urlsafe(32)
 LOCK = threading.RLock()
 STOP = threading.Event()
@@ -39,7 +44,7 @@ def validate(payload):
     result = {}
     for key, default in [('label','empty_room'),('port',''),('participant','p1'),
                          ('session','session1'),('room','room1'),('placement',''),
-                         ('notes',''),('ap_mac','any')]:
+                         ('notes',''),('ap_mac','any'),('tx_port',PAIR.get('tx_port',''))]:
         value = str(payload.get(key, default)).strip()
         if len(value) > 2000 or '\x00' in value:
             raise ValueError(f'Invalid {key}')
@@ -47,6 +52,8 @@ def validate(payload):
     result['label'] = category_name(result['label'])
     if not result['port']:
         raise ValueError('Choose or enter the receiver serial port')
+    if result['tx_port'] and result['tx_port'] == result['port']:
+        raise ValueError('AP receiver and STA support ports must be different')
     mac = result['ap_mac'].upper()
     if mac != 'ANY' and not re.fullmatch(r'(?:[0-9A-F]{2}:){5}[0-9A-F]{2}', mac):
         raise ValueError('MAC filter must be any or a colon-separated MAC')
@@ -72,7 +79,7 @@ def validate(payload):
 def argv_for(settings):
     args = [sys.executable, '-u', str(HERE/'collector_categories.py'), '--output-dir', str(DATA)]
     for key in ('port','label','participant','session','room','placement','notes',
-                'ap_mac','seconds','delay','baud','event_start','event_end'):
+                'ap_mac','tx_port','seconds','delay','baud','event_start','event_end'):
         if key in settings:
             args += ['--'+key.replace('_','-')+'='+str(settings[key])]
     return args
@@ -102,7 +109,7 @@ def worker(settings):
                         path=Path(line.split(' | Destination: ',1)[1]).resolve()
                         if path.is_relative_to(DATA.resolve()):
                             STATE['folder']=str(path)
-                    if line.startswith(('Receiver check:', 'Receiver ready:')):
+                    if line.startswith(('Receiver check:', 'Receiver ready:', 'Transmitter support:', 'Transmitter recovery:')):
                         STATE['phase']=line
                     if line.startswith('Prepare:'):
                         STATE['phase']=line
@@ -235,7 +242,7 @@ class Handler(BaseHTTPRequestHandler):
             return self.respond({'error':'Invalid host'},403)
         try:
             if self.path=='/':
-                page=(HERE/'recorder.html').read_text().replace('__TOKEN__',TOKEN)
+                page=(HERE/'recorder.html').read_text().replace('__TOKEN__',TOKEN).replace('__TX_PORT__',PAIR.get('tx_port',''))
                 self.respond(page,html=True)
             elif self.path=='/api/status':self.respond(snapshot())
             elif self.path=='/api/ports':self.respond(ports())

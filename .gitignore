@@ -14,3 +14,6 @@ sdkconfig.old
 
 # Private board backups include Wi-Fi configuration
 /.firmware-backups/
+
+# This computer's explicit transmitter USB support port
+/collection/boards.local.json

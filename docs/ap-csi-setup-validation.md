@@ -72,3 +72,44 @@ PHY behavior, signal strength and placement can still reduce useful samples.
 These short tests do not establish long-session reliability or training quality.
 Inspect per-run metadata and raw serial data; do not interpolate over gaps or
 silently combine old STA and new AP sessions as identical measurements.
+
+## Follow-up: USB startup management
+
+The AP-only changes did not eliminate all startup failures: a subsequent browser
+run reached its 20-second startup timeout without matching CSI. The saved browser
+filter was `any`. A direct STA read showed association retries, and its serial
+port had POSIX `HUPCL` enabled. The exact cause of that failed run remains
+unproven. Serial reset/control-line behavior is a plausible contributor;
+[Espressif documents this class of reset behavior](https://docs.espressif.com/projects/esptool/en/latest/esp32/advanced-topics/boot-mode-selection.html).
+
+The collector now clears HUPCL on the selected AP and STA support ports, holds the
+STA support connection open, and saves its diagnostics. It allows 45 seconds for
+startup and makes at most one automatic STA reset before the countdown if valid
+AP CSI has not arrived after eight seconds. No automatic reset occurs during the
+action recording. The local UI profile explicitly selects the known station USB
+port; there is no probing or resetting of unrelated serial devices.
+
+Three five-second `configuration_check` recordings were started through the
+user's existing Chrome recorder tab and completed in a batch:
+
+| Run | Samples | Measured samples/sec | Malformed | Device gaps >250 ms |
+| --- | ---: | ---: | ---: | ---: |
+| 1 | 463 | 91.26 | 0 | 0 |
+| 2 | 496 | 98.23 | 0 | 0 |
+| 3 | 489 | 96.84 | 0 | 0 |
+
+Both ports reported hang-up disabled, the observed support-board project was
+`ACTIVE_STA`, and no automatic reset was needed in these three runs. All final
+records were AP CSI. The user's original activity, session, notes, 15-second
+preparation delay, 30-second duration and 10 repetitions were restored afterward.
+The support port remains set to `/dev/cu.usbserial-4`.
+
+A separate diagnostic deliberately held the STA in reset during startup. The
+collector made exactly one automatic reset, then received AP CSI and saved 295
+samples over three seconds without a manual reset. This diagnostic was stored in
+`/private/tmp/blissey-managed-sta-recovery/`, outside the activity dataset.
+
+Sixteen collector tests pass, including support-board role detection, POSIX
+hang-up handling, and the one-attempt startup-recovery limit. These checks improve
+startup reproducibility; they do not guarantee 100 received samples/sec or
+long-session reliability in the crowded room.

@@ -17,6 +17,8 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 
+from serial_support import TransmitterSupport, clear_hangup
+
 
 def utc_now():
     return datetime.now(timezone.utc).isoformat()
@@ -101,14 +103,24 @@ def parse_csi(text):
     return record
 
 
-def wait_for_receiver(device, expected_role, mac, timeout, startup):
+def wait_for_receiver(device, expected_role, mac, timeout, startup, transmitter=None):
     """Require actual, parseable CSI before asking the participant to act."""
     deadline = time.monotonic() + timeout
     pending = bytearray()
+    recovered = False
+    seen_sources = set()
+    received_bytes = 0
     print(f'Receiver check: waiting for {expected_role} CSI (up to {timeout:g}s)', flush=True)
     while time.monotonic() < deadline:
         chunk = device.read(min(device.in_waiting or 1, 65536))
         startup.write(chunk)
+        received_bytes += len(chunk)
+        if transmitter is not None:
+            if transmitter.error:
+                raise ValueError(transmitter.error)
+            if not recovered and time.monotonic() >= deadline - timeout + min(8, timeout / 2):
+                transmitter.recover_before_recording()
+                recovered = True
         pending.extend(chunk)
         while b'\n' in pending:
             line, _, pending = pending.partition(b'\n')
@@ -119,6 +131,7 @@ def wait_for_receiver(device, expected_role, mac, timeout, startup):
                 item = parse_csi(text)
             except (ValueError, csv.Error, TypeError, OverflowError):
                 continue
+            seen_sources.add(item['source_mac'])
             if expected_role != 'any' and item['role'] != expected_role:
                 raise ValueError(f"Wrong board: received {item['role']} CSI; select the {expected_role} USB port")
             if mac != 'ANY' and item['source_mac'] != mac:
@@ -127,7 +140,7 @@ def wait_for_receiver(device, expected_role, mac, timeout, startup):
             return item['role']
         if len(pending) > 1024*1024:
             pending.clear()
-    raise ValueError('No matching CSI received. Check AP power, STA connection, port, baud and source filter. No action was recorded.')
+    raise ValueError(f'No matching CSI received ({received_bytes} serial bytes; CSI sources: {sorted(seen_sources)}; filter: {mac}). Check AP power, STA connection, port and baud. No action was recorded.')
 
 
 def prepare(device, delay):
@@ -156,8 +169,9 @@ def main():
     parser.add_argument('--seconds', type=float, default=30)
     parser.add_argument('--delay', type=float, default=5, help='Preparation seconds AFTER opening serial; default 5')
     parser.add_argument('--baud', type=int, default=921600, help='Must match firmware console baud')
+    parser.add_argument('--tx-port', default='', help='Optional USB-connected STA port, held open for startup/recovery diagnostics')
     parser.add_argument('--receiver-role', choices=['AP', 'STA', 'any'], default='AP')
-    parser.add_argument('--ready-timeout', type=float, default=20)
+    parser.add_argument('--ready-timeout', type=float, default=45)
     parser.add_argument('--idle-timeout', type=float, default=5)
     parser.add_argument('--ap-mac', default='any', help='Optional source filter; default accepts all')
     parser.add_argument('--output-dir', default='recordings')
@@ -174,6 +188,8 @@ def main():
         parser.error('Delay must be finite and nonnegative; baud must be positive')
     if not all(math.isfinite(x) and x > 0 for x in (args.ready_timeout, args.idle_timeout)):
         parser.error('Readiness and idle timeouts must be finite and positive')
+    if args.tx_port and args.tx_port == args.port:
+        parser.error('AP receiver and STA support ports must be different')
     mac = args.ap_mac.upper()
     if mac != 'ANY' and not re.fullmatch(r'(?:[0-9A-F]{2}:){5}[0-9A-F]{2}', mac):
         parser.error('--ap-mac must be any or a colon-separated MAC')
@@ -214,12 +230,19 @@ def main():
     firmware_queue_dropped = 0
     host_clock_discontinuities = 0
     sleep_guard = None
+    transmitter = None
     device = serial.Serial(port=None, baudrate=args.baud, timeout=0.1, write_timeout=1, exclusive=True)
     device.dtr = False
     device.rts = False
     device.port = args.port
     try:
         device.open()
+        metadata['receiver_hangup_disabled'] = clear_hangup(device)
+        if args.tx_port:
+            transmitter = TransmitterSupport(args.tx_port, args.baud, folder / 'transmitter_serial.bin')
+            metadata.update(transmitter_port=args.tx_port,
+                            transmitter_hangup_disabled=transmitter.hangup_disabled)
+            print(f'Transmitter support: {args.tx_port} held open during this run', flush=True)
         if sys.platform == 'darwin' and shutil.which('caffeinate'):
             try:
                 sleep_guard = subprocess.Popen(
@@ -233,10 +256,12 @@ def main():
                 (folder / 'measurements.jsonl').open('w') as output:
             print(f'Category: {label} | Destination: {folder}', flush=True)
             print('Preparation is NOT recorded. Control+C stops early.', flush=True)
-            receiver_role = wait_for_receiver(device, args.receiver_role, mac, args.ready_timeout, startup)
+            receiver_role = wait_for_receiver(device, args.receiver_role, mac, args.ready_timeout, startup, transmitter)
             metadata['board_id'] = receiver_role
             prepare(device, args.delay)
             wait_for_receiver(device, args.receiver_role, mac, min(args.ready_timeout, 3), startup)
+            if transmitter is not None and transmitter.error:
+                raise ValueError(transmitter.error)
             started = time.monotonic()
             metadata.update(started_at=utc_now(), status='recording')
             (folder / 'metadata.json').write_text(json.dumps(metadata, indent=2))
@@ -247,6 +272,8 @@ def main():
             previous_wall = time.time()
             event_started = event_ended = False
             while time.monotonic() - started < args.seconds:
+                if transmitter is not None and transmitter.error:
+                    raise ValueError(transmitter.error)
                 chunk = device.read(min(device.in_waiting or 1, 65536))
                 now = time.monotonic()
                 wall_now = time.time()
@@ -326,6 +353,9 @@ def main():
         metadata.update(status='error', serial_error=str(exc))
         print(f'\nRecording error: {exc}')
     finally:
+        if transmitter is not None:
+            metadata.update(transmitter_observed_role=transmitter.role, transmitter_startup_resets=transmitter.resets)
+            transmitter.close()
         if sleep_guard is not None and sleep_guard.poll() is None:
             sleep_guard.terminate()
             sleep_guard.wait(timeout=2)

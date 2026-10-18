@@ -27,7 +27,7 @@ class RecordingTests(unittest.TestCase):
         try:
             # Pseudo-terminals have no USB modem control lines; exercise the real
             # CLI with only those two hardware ioctls replaced.
-            bootstrap="import serial,runpy,sys; serial.Serial._update_dtr_state=lambda self:None; serial.Serial._update_rts_state=lambda self:None; sys.argv=sys.argv[1:]; runpy.run_path(sys.argv[0],run_name='__main__')"
+            bootstrap="import serial,runpy,sys; serial.Serial._update_dtr_state=lambda self:None; serial.Serial._update_rts_state=lambda self:None; sys.argv=sys.argv[1:]; sys.path.insert(0,str(__import__('pathlib').Path(sys.argv[0]).parent)); runpy.run_path(sys.argv[0],run_name='__main__')"
             if clock_jump:
                 bootstrap="import time; real_wall=time.time; start=time.monotonic(); time.time=lambda:real_wall()+(30 if time.monotonic()-start>.45 else 0); "+bootstrap
             result=subprocess.run([sys.executable,'-c',bootstrap,str(Path(__file__).with_name('collector_categories.py')),

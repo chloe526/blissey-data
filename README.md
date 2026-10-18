@@ -100,3 +100,29 @@ operations stubbed; real board validation at 921600 baud is recorded separately.
 
 See [the local hardware validation record](docs/ap-csi-setup-validation.md) for
 measured rates, reconnection evidence, and remaining limits.
+
+## Two boards connected to the same computer by USB
+
+For this pair, set the AP receiver to `/dev/cu.usbserial-0001` and the STA
+transmitter support port to `/dev/cu.usbserial-4`. Both use 921600 baud. The UI
+prefills the support port from ignored `collection/boards.local.json`; port names
+must be checked again after reconnecting hardware. Set `tx_port` in that local
+file to configure another computer. Leave the support field blank when the STA
+uses independent power and has no USB data connection to the recorder computer.
+
+The collector holds the selected STA support port open, drains its diagnostics to
+`transmitter_serial.bin`, and clears POSIX `HUPCL` on both selected ports. This
+avoids hang-up-on-close transitions on ESP32 reset/boot control lines. A detected
+AP on the support port is an error. If no matching AP CSI arrives after eight
+seconds, it makes one STA reset attempt during startup, before the preparation
+countdown and action cue. It never performs this recovery during recording.
+Startup now allows up to 45 seconds; genuine failure still stops the batch.
+
+For direct CLI collection with both USB-connected boards:
+
+    python collection/collector_categories.py --port /dev/cu.usbserial-0001 --tx-port /dev/cu.usbserial-4 --label empty_room
+
+Startup errors now include received byte counts, observed CSI source MACs and the
+requested filter. This distinguishes absent traffic from a filter mismatch.
+Diagnostics named `configuration_check` are hardware tests, not activity training
+examples; exclude them from training datasets.
